@@ -293,7 +293,7 @@ def draw_network_graph(G, keywords_dict):
                                font_size=9, 
                                font_color='black',
                                font_weight='bold',
-                               fontproperties=font_prop, # <-- 이 부분을 수정했습니다!
+                               font_family=font_prop.get_name(), # <-- 이 부분을 수정했습니다!
                                ax=ax) # ax 명시
     else:
         nx.draw_networkx_labels(G, pos, 
