@@ -130,10 +130,10 @@ def create_wordcloud_from_keywords(keywords_dict, width=800, height=600, bg_colo
         return None
     
     # 폰트 경로 확인
-    font_path = "./font/Pretendard-Bold.ttf"
+    font_path = "./fonts/Pretendard-Bold.ttf"
     if not os.path.exists(font_path):
         st.error(f"폰트 파일을 찾을 수 없습니다: {font_path}")
-        st.info("폰트 파일이 ./font/Pretendard-Bold.ttf 경로에 있는지 확인해주세요.")
+        st.info("폰트 파일이 ./fonts/Pretendard-Bold.ttf 경로에 있는지 확인해주세요.")
         return None
     
     try:
@@ -220,7 +220,7 @@ if not api_key:
     - 키는 안전하게 보관하세요
     
     **폰트 파일 설정:**
-    - ./font/Pretendard-Bold.ttf 파일이 필요합니다
+    - ./fonts/Pretendard-Bold.ttf 파일이 필요합니다
     """)
 
 # 메인 인터페이스
@@ -298,7 +298,7 @@ if st.button("🤖 GPT로 키워드 추출", type="primary", disabled=not api_ke
                         weights = list(keywords_dict.values())
                         
                         # 한글 폰트 재설정 (차트용)
-                        font_path = "./font/Pretendard-Bold.ttf"
+                        font_path = "./fonts/Pretendard-Bold.ttf"
                         if os.path.exists(font_path):
                             font_prop = fm.FontProperties(fname=font_path)
                             
