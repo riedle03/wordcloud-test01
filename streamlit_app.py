@@ -1,4 +1,5 @@
 import streamlit as st
+import matplotlib # matplotlib 모듈 자체를 임포트
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 from wordcloud import WordCloud
@@ -21,10 +22,10 @@ FONT_PATH = "./fonts/Pretendard-Bold.ttf"
 def setup_korean_font():
     """한글 폰트를 matplotlib에 설정"""
     
-    st.info(f"Matplotlib version check: {plt.__version__}")
+    # Matplotlib 버전과 폰트 매니저 경로를 Streamlit에 출력하여 진단에 도움
+    st.info(f"Matplotlib version check: {matplotlib.__version__}")
     st.info(f"Font Manager module path: {fm.__file__}")
     
-    # get_cachedir() 호출 시도 및 오류 처리
     cache_dir = None
     try:
         cache_dir = fm.get_cachedir()
@@ -32,12 +33,13 @@ def setup_korean_font():
         
         # cache_dir이 존재하고 디렉토리인지 확인
         if os.path.exists(cache_dir) and os.path.isdir(cache_dir):
+            # 'fontlist-'로 시작하고 '.json'으로 끝나는 폰트 캐시 파일들을 찾아 삭제
             for fname in os.listdir(cache_dir):
                 if fname.startswith('fontlist-') and fname.endswith('.json'):
                     cache_file_path = os.path.join(cache_dir, fname)
                     try:
                         os.remove(cache_file_path)
-                        st.info(f"Matplotlib 폰트 캐시 파일 삭제: {os.path.basename(cache_file_path)}")
+                        st.info(f"Matplotlib 폰트 캐시 파일 삭제: {os.path.basename(cache_file_path)}") 
                     except OSError as e:
                         st.warning(f"폰트 캐시 파일 삭제 실패 ({os.path.basename(cache_file_path)}): {e}")
         else:
@@ -56,7 +58,7 @@ def setup_korean_font():
         plt.rcParams['font.size'] = 10
         plt.rcParams['axes.unicode_minus'] = False  # 마이너스 기호 깨짐 방지
         st.success(f"한글 폰트 '{font_prop.get_name()}'가 성공적으로 설정되었습니다.")
-        # 캐시를 확실히 재빌드 (get_cachedir이 없어도 작동)
+        # 새로운 폰트를 등록했으므로 폰트 매니저에게 업데이트를 알림
         fm.findSystemFonts(fontpaths=None, rebuild_cache=True) 
         return True
     else:
@@ -273,43 +275,39 @@ def create_pyvis_network_html(G, keywords_dict):
         return None
     
     # pyvis Network 객체 초기화
-    # notebook=True는 주피터 노트북 환경에서 렌더링에 유용하지만,
-    # Streamlit에서 직접 HTML을 다룰 때는 False로 설정하고 cdn_resources='remote'를 추천
     net = Network(notebook=False, height="750px", width="100%", 
-                  cdn_resources='remote', # CDN에서 리소스를 로드하여 배포에 용이
-                  directed=False) # 방향 없는 그래프
+                  cdn_resources='remote', 
+                  directed=False) 
 
     # 노드 추가
-    # pyvis 노드에 사용할 폰트 설정 (브라우저가 지원해야 함)
-    # Pretendard 폰트가 사용자의 브라우저에 없을 경우 대비하여 일반적인 한글 폰트 포함
     korean_font_family = "'Pretendard Bold', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif"
 
     for node, attrs in G.nodes(data=True):
-        size = keywords_dict.get(node, 1) * 7 # 가중치에 따라 노드 크기 조절 (배율 조정)
-        title = f"키워드: {node}<br>가중치: {keywords_dict.get(node, 1)}" # 마우스 오버 시 정보
+        size = keywords_dict.get(node, 1) * 7 
+        title = f"키워드: {node}<br>가중치: {keywords_dict.get(node, 1)}" 
         
         net.add_node(
             node, 
             label=node, 
             size=size, 
             title=title,
-            color='#6A0DAD', # 노드 색상 (보라색 계열)
+            color='#6A0DAD', 
             font={'size': 12, 'color': 'black', 'face': korean_font_family, 'align': 'center'}
         )
 
     # 엣지 추가
     for u, v, attrs in G.edges(data=True):
-        weight = attrs.get('weight', 1) # 동시출현 빈도
-        title = f"동시출현: {weight}회" # 마우스 오버 시 정보
+        weight = attrs.get('weight', 1) 
+        title = f"동시출현: {weight}회" 
         net.add_edge(
             u, v, 
-            value=weight, # 엣지 두께에 사용
+            value=weight, 
             title=title,
             color='gray',
-            width=weight/2 # 동시출현 빈도에 따라 엣지 두께 조절
+            width=weight/2 
         )
 
-    # 물리 엔진 설정 (더 나은 레이아웃을 위해)
+    # 물리 엔진 설정
     net.set_options("""
     var options = {
       "physics": {
@@ -578,7 +576,7 @@ if st.button("🤖 GPT로 키워드 추출", type="primary", disabled=not api_ke
                                 pyvis_html = create_pyvis_network_html(G, keywords_dict)
                                 if pyvis_html:
                                     # HTML 컴포넌트 출력
-                                    st.components.v1.html(pyvis_html, height=750, scrolling=True) # 적절한 높이 설정
+                                    st.components.v1.html(pyvis_html, height=750, scrolling=True) 
                                     
                                     # HTML 파일 다운로드 링크
                                     network_download_link = get_html_download_link(pyvis_html, "keyword_network.html", "📥 네트워크 그래프 다운로드 (HTML)")
