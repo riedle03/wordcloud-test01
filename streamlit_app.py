@@ -1,5 +1,6 @@
 import streamlit as st
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 from wordcloud import WordCloud
 import io
 import base64
@@ -7,162 +8,132 @@ from PIL import Image
 import numpy as np
 import os
 import re
-from collections import Counter
-import math
+import requests
+import json
+
+# 한글 폰트 설정
+def setup_korean_font():
+    """한글 폰트를 matplotlib에 설정"""
+    font_path = "./font/Pretendard-Bold.ttf"
+    if os.path.exists(font_path):
+        # 폰트 등록
+        font_prop = fm.FontProperties(fname=font_path)
+        plt.rcParams['font.family'] = font_prop.get_name()
+        plt.rcParams['font.size'] = 10
+        plt.rcParams['axes.unicode_minus'] = False  # 마이너스 기호 깨짐 방지
+        return True
+    else:
+        st.warning("한글 폰트 파일을 찾을 수 없어 기본 폰트를 사용합니다.")
+        return False
+
+# 앱 시작 시 폰트 설정
+setup_korean_font()
 
 # 페이지 설정
 st.set_page_config(
-    page_title="한국어 키워드 추출 & 워드클라우드 생성기",
-    page_icon="🔍",
+    page_title="GPT API 키워드 추출 & 워드클라우드 생성기",
+    page_icon="🤖",
     layout="wide"
 )
 
-# 한국어 불용어 리스트 (교육 분야에 맞게 조정)
-KOREAN_STOPWORDS = {
-    '이', '그', '저', '것', '들', '는', '은', '을', '를', '에', '의', '가', '와', '과', '도', '로', '으로',
-    '이다', '있다', '없다', '하다', '되다', '같다', '다른', '많은', '작은', '큰', '좋은', '나쁜',
-    '또한', '그리고', '하지만', '그러나', '따라서', '즉', '예를', '들어', '바로', '단지', '다만',
-    '때문', '위해', '통해', '대해', '관해', '에서', '에게', '부터', '까지', '라고', '라는', '이라는',
-    '이런', '그런', '저런', '이것', '그것', '저것', '여기', '거기', '저기', '지금', '오늘',
-    '내일', '어제', '언제', '어디', '누구', '무엇', '왜', '어떻게', '어떤', '모든', '각각',
-    '수', '때', '곳', '사람', '것들', '점', '면', '등', '중', '간', '후', '전', '내', '외',
-    '상', '하', '좌', '우', '앞', '뒤', '위', '아래', '사이', '속', '밖', '안', '여러', '각종',
-    '하나', '둘', '셋', '있는', '없는', '되는', '하는', '큰', '작은', '새로운', '오래된',
-    '그런데', '그래서', '또', '또한', '역시', '물론', '당연히', '확실히', '아마', '정말',
-    '너무', '매우', '상당히', '꽤', '조금', '약간', '살짝', '좀', '잠깐', '한번', '두번',
-    '처음', '마지막', '다음', '이전', '계속', '항상', '가끔', '자주', '때때로', '보통',
-    '일반적', '특별한', '중요한', '필요한', '가능한', '어려운', '쉬운', '복잡한', '간단한'
-}
+def call_openai_api(text, api_key, model="gpt-4.1-mini"):
+    """OpenAI API를 호출하여 키워드 추출"""
+    
+    prompt = f"""
+다음 텍스트에서 가장 중요한 키워드들을 추출하고 중요도에 따라 1~10 사이의 가중치를 부여해주세요.
 
-def clean_text(text):
-    """텍스트 전처리"""
-    # 특수문자 제거 (한글, 숫자, 공백만 남김)
-    text = re.sub(r'[^가-힣0-9\s]', ' ', text)
-    # 연속된 공백을 하나로
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
+텍스트: "{text}"
 
-def extract_keywords_simple(text, min_length=2, max_keywords=20):
-    """간단한 키워드 추출 (단어 빈도 기반)"""
-    # 텍스트 전처리
-    cleaned_text = clean_text(text)
+요구사항:
+1. 10~20개의 핵심 키워드만 추출
+2. 각 키워드에 1~10 사이의 가중치 부여 (10이 가장 중요)
+3. 불용어(조사, 어미, 일반적인 단어) 제외
+4. 복합어나 중요한 구문도 포함 가능
+5. 아래 형식으로만 답변해주세요:
+
+키워드A 5, 키워드B 4, 키워드C 3
+
+위 형식 외의 다른 설명은 하지 마세요.
+"""
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
     
-    # 단어 분리 (공백 기준)
-    words = cleaned_text.split()
+    data = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user", 
+                "content": prompt
+            }
+        ],
+        "max_tokens": 500,
+        "temperature": 0.3
+    }
     
-    # 필터링: 길이, 불용어, 숫자만으로 구성된 단어 제외
-    filtered_words = []
-    for word in words:
-        if (len(word) >= min_length and 
-            word not in KOREAN_STOPWORDS and 
-            not word.isdigit() and
-            re.search(r'[가-힣]', word)):  # 한글이 포함된 단어만
-            filtered_words.append(word)
+    try:
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            return result['choices'][0]['message']['content'].strip()
+        else:
+            return f"API 오류: {response.status_code} - {response.text}"
+            
+    except requests.exceptions.RequestException as e:
+        return f"네트워크 오류: {str(e)}"
+    except Exception as e:
+        return f"오류 발생: {str(e)}"
+
+def parse_gpt_response(response_text):
+    """GPT 응답을 파싱하여 키워드 딕셔너리로 변환"""
+    keywords_dict = {}
     
-    # 빈도 계산
-    word_counts = Counter(filtered_words)
-    
-    # 상위 키워드 추출
-    top_keywords = word_counts.most_common(max_keywords)
-    
-    # 가중치 계산 (최대값을 10으로 정규화)
-    if not top_keywords:
+    try:
+        # 쉼표로 분리
+        items = response_text.split(',')
+        
+        for item in items:
+            item = item.strip()
+            # 마지막 공백으로 분리된 숫자를 가중치로 처리
+            parts = item.rsplit(' ', 1)
+            
+            if len(parts) == 2:
+                keyword = parts[0].strip()
+                try:
+                    weight = int(parts[1].strip())
+                    if 1 <= weight <= 10:  # 가중치 범위 검증
+                        keywords_dict[keyword] = weight
+                except ValueError:
+                    # 숫자가 아닌 경우 전체를 키워드로 처리
+                    keywords_dict[item] = 5
+            else:
+                # 가중치가 없는 경우 기본값 5
+                keywords_dict[item] = 5
+                
+        return keywords_dict
+        
+    except Exception as e:
+        st.error(f"응답 파싱 오류: {str(e)}")
         return {}
-    
-    max_count = top_keywords[0][1]
-    weighted_keywords = {}
-    
-    for word, count in top_keywords:
-        # 1~10 사이의 가중치로 계산
-        weight = max(1, round((count / max_count) * 10))
-        weighted_keywords[word] = weight
-    
-    return weighted_keywords
 
-def extract_keywords_ngram(text, min_length=2, max_keywords=20):
-    """N-gram 기반 키워드 추출"""
-    # 텍스트 전처리
-    cleaned_text = clean_text(text)
-    
-    # 단어와 2-gram, 3-gram 추출
-    words = cleaned_text.split()
-    
-    # 1-gram (단어)
-    unigrams = []
-    for word in words:
-        if (len(word) >= min_length and 
-            word not in KOREAN_STOPWORDS and 
-            not word.isdigit() and
-            re.search(r'[가-힣]', word)):
-            unigrams.append(word)
-    
-    # 2-gram
-    bigrams = []
-    for i in range(len(words) - 1):
-        bigram = words[i] + ' ' + words[i + 1]
-        if (len(bigram) >= 4 and 
-            words[i] not in KOREAN_STOPWORDS and 
-            words[i + 1] not in KOREAN_STOPWORDS and
-            re.search(r'[가-힣]', bigram)):
-            bigrams.append(bigram)
-    
-    # 빈도 계산
-    all_terms = unigrams + bigrams
-    term_counts = Counter(all_terms)
-    
-    # TF-IDF 스타일의 가중치 적용 (간단 버전)
-    weighted_terms = {}
-    total_terms = len(all_terms)
-    
-    for term, count in term_counts.items():
-        # TF (용어 빈도)
-        tf = count / total_terms
-        # 간단한 가중치 (빈도와 길이 고려)
-        length_bonus = min(2.0, len(term.split()) * 0.5 + 1)
-        score = tf * length_bonus * 1000  # 스케일링
-        weighted_terms[term] = score
-    
-    # 상위 키워드 선택
-    top_terms = sorted(weighted_terms.items(), key=lambda x: x[1], reverse=True)[:max_keywords]
-    
-    # 1~10 사이의 가중치로 정규화
-    if not top_terms:
-        return {}
-    
-    max_score = top_terms[0][1]
-    final_keywords = {}
-    
-    for term, score in top_terms:
-        weight = max(1, round((score / max_score) * 10))
-        final_keywords[term] = weight
-    
-    return final_keywords
-
-def format_keywords_output(keywords_dict):
-    """키워드를 요청한 형식으로 출력"""
-    if not keywords_dict:
-        return "키워드를 찾을 수 없습니다."
-    
-    # 가중치 순으로 정렬
-    sorted_keywords = sorted(keywords_dict.items(), key=lambda x: x[1], reverse=True)
-    
-    # "키워드A 5, 키워드B 4, 키워드C 3" 형식으로 변환
-    formatted_parts = []
-    for keyword, weight in sorted_keywords:
-        formatted_parts.append(f"{keyword} {weight}")
-    
-    return ", ".join(formatted_parts)
-
-def create_wordcloud_from_keywords(keywords_dict, width=800, height=600):
+def create_wordcloud_from_keywords(keywords_dict, width=800, height=600, bg_color='white'):
     """키워드 딕셔너리로부터 워드클라우드 생성"""
     if not keywords_dict:
         return None
     
     # 폰트 경로 확인
-    font_path = "./fonts/NanumGothic-Regular.ttf"
+    font_path = "./font/Pretendard-Bold.ttf"
     if not os.path.exists(font_path):
         st.error(f"폰트 파일을 찾을 수 없습니다: {font_path}")
-        st.info("폰트 파일이 ./fonts/NanumGothic-Regular.ttf 경로에 있는지 확인해주세요.")
+        st.info("폰트 파일이 ./font/Pretendard-Bold.ttf 경로에 있는지 확인해주세요.")
         return None
     
     try:
@@ -171,11 +142,12 @@ def create_wordcloud_from_keywords(keywords_dict, width=800, height=600):
             font_path=font_path,
             width=width,
             height=height,
-            background_color='white',
+            background_color=bg_color,
             max_words=100,
             relative_scaling=0.5,
             min_font_size=10,
-            colormap='viridis'
+            colormap='viridis',
+            prefer_horizontal=0.7
         ).generate_from_frequencies(keywords_dict)
         
         return wc
@@ -206,125 +178,195 @@ def get_image_download_link(img, filename):
     return href
 
 # 앱 제목 및 설명
-st.title("🔍 한국어 키워드 추출 & 워드클라우드 생성기")
-st.markdown("한국어 문단을 입력하면 키워드를 추출하고 가중치와 함께 워드클라우드를 생성해드립니다!")
+st.title("🤖 GPT API 키워드 추출 & 워드클라우드 생성기")
+st.markdown("GPT API를 활용하여 텍스트에서 핵심 키워드를 추출하고 가중치와 함께 워드클라우드를 생성합니다!")
 
 # 사이드바 설정
-st.sidebar.header("⚙️ 추출 설정")
+st.sidebar.header("🔑 API 설정")
 
-extraction_method = st.sidebar.selectbox(
-    "추출 방법",
-    ["단순 빈도 기반", "N-gram 기반 (추천)"],
-    index=1
+# API 키 입력
+api_key = st.sidebar.text_input(
+    "OpenAI API Key", 
+    type="password",
+    help="OpenAI API 키를 입력하세요. (https://platform.openai.com/api-keys)"
 )
 
-min_word_length = st.sidebar.slider("최소 단어 길이", 1, 5, 2)
-max_keywords = st.sidebar.slider("최대 키워드 수", 10, 50, 20)
+# GPT 모델 선택
+model_choice = st.sidebar.selectbox(
+    "GPT 모델",
+    ["gpt-4.1-mini", "GPT-4.1 nano", "gpt-4o-mini"],
+    index=0,
+    help="사용할 GPT 모델을 선택하세요. gpt-4.1-mini가 가장 경제적이면서도 성능이 좋습니다."
+)
 
 # 워드클라우드 설정
 st.sidebar.header("🎨 워드클라우드 설정")
 wc_width = st.sidebar.slider("너비", 400, 1200, 800)
 wc_height = st.sidebar.slider("높이", 300, 800, 600)
+bg_color = st.sidebar.selectbox("배경색", ["white", "black"], index=0)
+
+# API 키 확인
+if not api_key:
+    st.warning("⚠️ OpenAI API 키를 왼쪽 사이드바에 입력해주세요.")
+    st.info("""
+    **API 키 발급 방법:**
+    1. https://platform.openai.com 접속
+    2. 로그인 후 'API Keys' 메뉴로 이동
+    3. 'Create new secret key' 클릭
+    4. 생성된 키를 복사하여 사이드바에 입력
+    
+    **주의사항:**
+    - API 사용료가 부과됩니다
+    - 키는 안전하게 보관하세요
+    
+    **폰트 파일 설정:**
+    - ./font/Pretendard-Bold.ttf 파일이 필요합니다
+    """)
 
 # 메인 인터페이스
-st.header("📝 문단 입력")
+st.header("📝 텍스트 입력")
 
 # 사용법 안내
 with st.expander("💡 사용법 및 예시"):
     st.markdown("""
     **사용법:**
-    1. 아래 텍스트 상자에 분석하고 싶은 한국어 문단을 입력하세요
-    2. '키워드 추출' 버튼을 클릭하세요
-    3. 추출된 키워드와 가중치를 확인하세요
-    4. 워드클라우드도 자동으로 생성됩니다
+    1. OpenAI API 키를 사이드바에 입력
+    2. 분석할 텍스트를 입력
+    3. 'GPT로 키워드 추출' 버튼 클릭
+    4. 추출된 키워드와 워드클라우드 확인
     
     **예시 텍스트:**
     ```
-    교육은 미래를 준비하는 가장 중요한 과정입니다. 학생들은 창의적 사고와 
-    문제 해결 능력을 기르기 위해 다양한 학습 경험이 필요합니다. 
-    협력 학습을 통해 소통 능력을 향상시키고, 디지털 기술을 활용한 
-    혁신적인 교육 방법으로 학습 효과를 극대화할 수 있습니다.
+    인공지능과 머신러닝은 현대 기술의 핵심 분야입니다. 
+    데이터 과학자들은 빅데이터를 분석하여 패턴을 찾고, 
+    딥러닝 알고리즘을 통해 예측 모델을 구축합니다. 
+    자연어 처리와 컴퓨터 비전 기술이 발전하면서 
+    다양한 산업 분야에서 혁신이 일어나고 있습니다.
     ```
     
-    **출력 형식:**
-    키워드A 5, 키워드B 4, 키워드C 3
+    **GPT의 장점:**
+    - 문맥을 이해한 정확한 키워드 추출
+    - 동의어/유의어 그룹핑
+    - 중요도에 따른 정교한 가중치 부여
+    - 복합어와 전문용어 인식
     """)
 
 # 텍스트 입력 영역
 text_input = st.text_area(
-    "분석할 한국어 문단을 입력하세요",
+    "분석할 텍스트를 입력하세요",
     height=200,
-    placeholder="예시: 교육은 미래를 준비하는 가장 중요한 과정입니다. 학생들은 창의적 사고와 문제 해결 능력을 기르기 위해...",
-    help="한국어 문단을 입력하면 키워드를 자동으로 추출합니다."
+    placeholder="예시: 인공지능과 머신러닝은 현대 기술의 핵심 분야입니다...",
+    help="GPT가 이 텍스트를 분석하여 핵심 키워드를 추출합니다."
 )
 
 # 키워드 추출 버튼
-if st.button("🔍 키워드 추출", type="primary"):
-    if text_input.strip():
-        with st.spinner("키워드를 추출하는 중..."):
-            # 키워드 추출
-            if extraction_method == "단순 빈도 기반":
-                keywords_dict = extract_keywords_simple(text_input, min_word_length, max_keywords)
-            else:
-                keywords_dict = extract_keywords_ngram(text_input, min_word_length, max_keywords)
-            
-            if keywords_dict:
-                st.success(f"총 {len(keywords_dict)}개의 키워드를 추출했습니다!")
-                
-                # 결과 표시
-                st.header("📊 추출 결과")
-                
-                # 요청된 형식으로 출력
-                formatted_output = format_keywords_output(keywords_dict)
-                st.subheader("🎯 키워드 및 가중치")
-                st.code(formatted_output, language=None)
-                
-                # 복사 가능한 텍스트박스
-                st.text_area(
-                    "복사용 결과", 
-                    value=formatted_output, 
-                    height=100,
-                    help="이 텍스트를 복사해서 워드클라우드 생성기에 사용할 수 있습니다."
-                )
-                
-                # 상세 키워드 정보
-                with st.expander("🔍 상세 키워드 정보"):
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write("**키워드**")
-                        for keyword in keywords_dict.keys():
-                            st.write(f"• {keyword}")
-                    with col2:
-                        st.write("**가중치**")
-                        for weight in keywords_dict.values():
-                            st.write(f"• {weight}")
-                
-                # 워드클라우드 생성
-                st.header("☁️ 워드클라우드")
-                
-                with st.spinner("워드클라우드를 생성하는 중..."):
-                    wordcloud = create_wordcloud_from_keywords(keywords_dict, wc_width, wc_height)
-                    
-                    if wordcloud:
-                        # 워드클라우드를 이미지로 변환
-                        img = wordcloud_to_image(wordcloud, wc_width, wc_height)
-                        
-                        # 이미지 표시
-                        st.image(img, caption="생성된 워드클라우드", use_column_width=True)
-                        
-                        # 다운로드 링크
-                        download_link = get_image_download_link(img, "keyword_wordcloud.png")
-                        st.markdown(download_link, unsafe_allow_html=True)
-                        
-                        # 생성 정보
-                        st.info(f"크기: {wc_width}x{wc_height} | 추출 방법: {extraction_method} | 키워드 수: {len(keywords_dict)}개")
-                
-            else:
-                st.error("키워드를 추출할 수 없습니다. 더 긴 텍스트를 입력해주세요.")
-    else:
+if st.button("🤖 GPT로 키워드 추출", type="primary", disabled=not api_key):
+    if not api_key:
+        st.error("OpenAI API 키를 먼저 입력해주세요.")
+    elif not text_input.strip():
         st.warning("분석할 텍스트를 입력해주세요.")
+    else:
+        with st.spinner(f"{model_choice} 모델로 키워드를 추출하는 중..."):
+            # GPT API 호출
+            gpt_response = call_openai_api(text_input, api_key, model_choice)
+            
+            if gpt_response.startswith("API 오류") or gpt_response.startswith("네트워크 오류") or gpt_response.startswith("오류 발생"):
+                st.error(gpt_response)
+            else:
+                # GPT 응답 표시
+                st.success("키워드 추출 완료!")
+                
+                st.header("🤖 GPT 응답")
+                st.code(gpt_response, language=None)
+                
+                # 키워드 파싱
+                keywords_dict = parse_gpt_response(gpt_response)
+                
+                if keywords_dict:
+                    st.header("📊 추출된 키워드")
+                    
+                    # 키워드 정보 표시
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.subheader("🎯 키워드 목록")
+                        for keyword, weight in sorted(keywords_dict.items(), key=lambda x: x[1], reverse=True):
+                            st.write(f"**{keyword}**: {weight}")
+                    
+                    with col2:
+                        st.subheader("📈 가중치 분포")
+                        weights = list(keywords_dict.values())
+                        
+                        # 한글 폰트 재설정 (차트용)
+                        font_path = "./font/Pretendard-Bold.ttf"
+                        if os.path.exists(font_path):
+                            font_prop = fm.FontProperties(fname=font_path)
+                            
+                        fig, ax = plt.subplots(figsize=(6, 4))
+                        ax.hist(weights, bins=range(1, 12), alpha=0.7, color='skyblue', edgecolor='black')
+                        
+                        # 한글 폰트 적용
+                        if os.path.exists(font_path):
+                            ax.set_xlabel('가중치', fontproperties=font_prop)
+                            ax.set_ylabel('키워드 수', fontproperties=font_prop)
+                            ax.set_title('키워드 가중치 분포', fontproperties=font_prop)
+                        else:
+                            ax.set_xlabel('Weight')
+                            ax.set_ylabel('Keywords Count')
+                            ax.set_title('Keyword Weight Distribution')
+                            
+                        ax.set_xticks(range(1, 11))
+                        ax.grid(True, alpha=0.3)
+                        st.pyplot(fig)
+                        plt.close()
+                    
+                    # 복사 가능한 결과
+                    st.subheader("📋 복사용 결과")
+                    st.text_area(
+                        "워드클라우드 생성기에 사용할 수 있는 형식", 
+                        value=gpt_response, 
+                        height=100,
+                        help="이 텍스트를 복사해서 다른 워드클라우드 도구에 사용할 수 있습니다."
+                    )
+                    
+                    # 워드클라우드 생성
+                    st.header("☁️ 워드클라우드")
+                    
+                    with st.spinner("워드클라우드를 생성하는 중..."):
+                        wordcloud = create_wordcloud_from_keywords(keywords_dict, wc_width, wc_height, bg_color)
+                        
+                        if wordcloud:
+                            # 워드클라우드를 이미지로 변환
+                            img = wordcloud_to_image(wordcloud, wc_width, wc_height)
+                            
+                            # 이미지 표시
+                            st.image(img, caption="GPT로 생성된 워드클라우드", use_column_width=True)
+                            
+                            # 다운로드 링크
+                            download_link = get_image_download_link(img, "gpt_wordcloud.png")
+                            st.markdown(download_link, unsafe_allow_html=True)
+                            
+                            # 생성 정보
+                            st.info(f"모델: {model_choice} | 크기: {wc_width}x{wc_height} | 키워드 수: {len(keywords_dict)}개")
+                
+                else:
+                    st.error("GPT 응답을 파싱할 수 없습니다. 응답 형식을 확인해주세요.")
+
+# 비용 안내
+if api_key:
+    st.sidebar.markdown("---")
+    st.sidebar.header("💰 비용 안내")
+    st.sidebar.markdown("""
+    **예상 비용 (1회 요청):**
+    - gpt-4.1-mini: ~$0.0001-0.0005 (추천)
+    - GPT-4.1 nano: ~$0.001-0.003  
+    - gpt-4o-mini: ~$0.01-0.03
+
+    *GPT-4.1-mini는 가장 경제적이면서도 우수한 성능을 제공합니다.*
+    """)
+
 
 # 푸터
 st.markdown("---")
-st.markdown("💡 **팁**: 더 정확한 키워드 추출을 위해 충분히 긴 문단을 입력해주세요!")
-st.markdown("🎓 교육용 키워드 추출기 | Made with Streamlit")
+st.markdown("💡 **팁**: GPT가 문맥을 이해하므로 더 정확하고 의미있는 키워드를 추출할 수 있습니다!")
+st.markdown("🤖 GPT API 키워드 추출기 | Made with Streamlit")
