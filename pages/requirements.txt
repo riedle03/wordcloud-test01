@@ -1,7 +1,0 @@
-streamlit
-matplotlib>=3.1.0  # 또는 단순히 matplotlib (최신 버전을 설치)
-wordcloud
-Pillow
-numpy
-requests
-networkx
