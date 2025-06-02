@@ -10,6 +10,9 @@ import os
 import re
 import requests
 import json
+import networkx as nx
+from collections import Counter
+import itertools
 
 # 한글 폰트 설정
 def setup_korean_font():
@@ -169,7 +172,150 @@ def wordcloud_to_image(wc, width=800, height=600):
     image = Image.open(buf)
     return image
 
-def get_image_download_link(img, filename):
+def create_network_analysis(text, keywords_dict):
+    """텍스트에서 키워드 간 네트워크 분석"""
+    if not keywords_dict or len(keywords_dict) < 2:
+        return None, None
+    
+    # 텍스트를 문장으로 분리
+    sentences = re.split(r'[.!?]\s*', text)
+    
+    # 키워드 동시출현 매트릭스 생성
+    co_occurrence = Counter()
+    keyword_list = list(keywords_dict.keys())
+    
+    for sentence in sentences:
+        # 문장에 포함된 키워드들 찾기
+        found_keywords = []
+        for keyword in keyword_list:
+            if keyword in sentence:
+                found_keywords.append(keyword)
+        
+        # 같은 문장에 나타난 키워드들의 조합 생성
+        for combo in itertools.combinations(found_keywords, 2):
+            # 알파벳 순으로 정렬하여 (A,B)와 (B,A)를 같게 처리
+            sorted_combo = tuple(sorted(combo))
+            co_occurrence[sorted_combo] += 1
+    
+    if not co_occurrence:
+        return None, None
+    
+    # 네트워크 그래프 생성
+    G = nx.Graph()
+    
+    # 키워드를 노드로 추가 (가중치를 노드 크기로 사용)
+    for keyword, weight in keywords_dict.items():
+        G.add_node(keyword, weight=weight)
+    
+    # 동시출현을 엣지로 추가
+    for (keyword1, keyword2), freq in co_occurrence.items():
+        if freq > 0:  # 임계값 설정 가능
+            G.add_edge(keyword1, keyword2, weight=freq)
+    
+    return G, co_occurrence
+
+def draw_network_graph(G, keywords_dict):
+    """네트워크 그래프 그리기"""
+    if G is None or len(G.nodes()) < 2:
+        return None
+    
+    # 한글 폰트 설정
+    font_path = "./fonts/Pretendard-Bold.ttf"
+    font_prop = None
+    if os.path.exists(font_path):
+        font_prop = fm.FontProperties(fname=font_path)
+    
+    # 그래프 레이아웃 설정
+    plt.figure(figsize=(12, 8))
+    
+    # 스프링 레이아웃 사용
+    pos = nx.spring_layout(G, k=3, iterations=50)
+    
+    # 노드 크기 설정 (키워드 가중치 기반)
+    node_sizes = [keywords_dict.get(node, 1) * 300 for node in G.nodes()]
+    
+    # 엣지 두께 설정 (동시출현 빈도 기반)
+    edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
+    edge_widths = [w * 2 for w in edge_weights]
+    
+    # 노드 그리기
+    nx.draw_networkx_nodes(G, pos, 
+                          node_size=node_sizes, 
+                          node_color='lightblue', 
+                          alpha=0.7,
+                          edgecolors='darkblue',
+                          linewidths=2)
+    
+    # 엣지 그리기
+    nx.draw_networkx_edges(G, pos, 
+                          width=edge_widths, 
+                          alpha=0.6, 
+                          edge_color='gray')
+    
+    # 라벨 그리기
+    if font_prop:
+        nx.draw_networkx_labels(G, pos, 
+                               font_size=10, 
+                               font_color='black',
+                               font_weight='bold',
+                               fontproperties=font_prop)
+    else:
+        nx.draw_networkx_labels(G, pos, 
+                               font_size=10, 
+                               font_color='black',
+                               font_weight='bold')
+    
+    plt.title('키워드 네트워크 분석', 
+              fontproperties=font_prop if font_prop else None, 
+              fontsize=16, 
+              fontweight='bold')
+    plt.axis('off')
+    plt.tight_layout()
+    
+    # 이미지로 변환
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+    buf.seek(0)
+    image = Image.open(buf)
+    plt.close()
+    
+    return image
+
+def analyze_network_metrics(G, keywords_dict):
+    """네트워크 지표 분석"""
+    if G is None or len(G.nodes()) < 2:
+        return {}
+    
+    metrics = {}
+    
+    # 기본 네트워크 정보
+    metrics['nodes'] = G.number_of_nodes()
+    metrics['edges'] = G.number_of_edges()
+    metrics['density'] = nx.density(G)
+    
+    # 중심성 지표 계산
+    try:
+        degree_centrality = nx.degree_centrality(G)
+        betweenness_centrality = nx.betweenness_centrality(G)
+        closeness_centrality = nx.closeness_centrality(G)
+        
+        # 가장 중요한 키워드들 찾기
+        metrics['most_connected'] = max(degree_centrality, key=degree_centrality.get)
+        metrics['most_between'] = max(betweenness_centrality, key=betweenness_centrality.get)
+        metrics['most_close'] = max(closeness_centrality, key=closeness_centrality.get)
+        
+        # 상위 5개 키워드의 중심성 점수
+        metrics['degree_top5'] = dict(sorted(degree_centrality.items(), 
+                                           key=lambda x: x[1], reverse=True)[:5])
+        metrics['betweenness_top5'] = dict(sorted(betweenness_centrality.items(), 
+                                                key=lambda x: x[1], reverse=True)[:5])
+        
+    except:
+        metrics['most_connected'] = "계산 불가"
+        metrics['most_between'] = "계산 불가"
+        metrics['most_close'] = "계산 불가"
+    
+    return metrics
     """이미지 다운로드 링크 생성"""
     buffered = io.BytesIO()
     img.save(buffered, format="PNG")
@@ -200,10 +346,15 @@ model_choice = st.sidebar.selectbox(
 )
 
 # 워드클라우드 설정
-st.sidebar.header("🎨 워드클라우드 설정")
-wc_width = st.sidebar.slider("너비", 400, 1200, 800)
-wc_height = st.sidebar.slider("높이", 300, 800, 600)
+st.sidebar.header("🎨 시각화 설정")
+wc_width = st.sidebar.slider("워드클라우드 너비", 400, 1200, 800)
+wc_height = st.sidebar.slider("워드클라우드 높이", 300, 800, 600)
 bg_color = st.sidebar.selectbox("배경색", ["white", "black"], index=0)
+
+# 네트워크 분석 설정
+show_network = st.sidebar.checkbox("🌐 네트워크 분석 포함", value=True)
+min_cooccurrence = st.sidebar.slider("최소 동시출현 횟수", 1, 5, 1, 
+                                    help="이 값 이상으로 함께 나타나는 키워드들만 연결선으로 표시")
 
 # API 키 확인
 if not api_key:
