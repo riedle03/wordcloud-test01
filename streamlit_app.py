@@ -13,34 +13,50 @@ import json
 import networkx as nx
 from collections import Counter
 import itertools
-from pyvis.network import Network # pyvis 임포트
+from pyvis.network import Network 
 
 # 한글 폰트 설정
 FONT_PATH = "./fonts/Pretendard-Bold.ttf"
 
 def setup_korean_font():
     """한글 폰트를 matplotlib에 설정"""
-    # Matplotlib 폰트 캐시 디렉토리를 찾아서 관련 파일 삭제
-    cache_dir = fm.get_cachedir()
     
-    if os.path.exists(cache_dir) and os.path.isdir(cache_dir):
-        for fname in os.listdir(cache_dir):
-            if fname.startswith('fontlist-') and fname.endswith('.json'):
-                cache_file_path = os.path.join(cache_dir, fname)
-                try:
-                    os.remove(cache_file_path)
-                    # st.info(f"Matplotlib 폰트 캐시 파일 삭제: {os.path.basename(cache_file_path)}") 
-                except OSError as e:
-                    st.warning(f"폰트 캐시 파일 삭제 실패 ({os.path.basename(cache_file_path)}): {e}")
-    else:
-        st.warning(f"Matplotlib 폰트 캐시 디렉토리를 찾을 수 없습니다: {cache_dir}")
+    st.info(f"Matplotlib version check: {plt.__version__}")
+    st.info(f"Font Manager module path: {fm.__file__}")
+    
+    # get_cachedir() 호출 시도 및 오류 처리
+    cache_dir = None
+    try:
+        cache_dir = fm.get_cachedir()
+        st.info(f"Matplotlib font cache directory: {cache_dir}")
+        
+        # cache_dir이 존재하고 디렉토리인지 확인
+        if os.path.exists(cache_dir) and os.path.isdir(cache_dir):
+            for fname in os.listdir(cache_dir):
+                if fname.startswith('fontlist-') and fname.endswith('.json'):
+                    cache_file_path = os.path.join(cache_dir, fname)
+                    try:
+                        os.remove(cache_file_path)
+                        st.info(f"Matplotlib 폰트 캐시 파일 삭제: {os.path.basename(cache_file_path)}")
+                    except OSError as e:
+                        st.warning(f"폰트 캐시 파일 삭제 실패 ({os.path.basename(cache_file_path)}): {e}")
+        else:
+            st.warning(f"Matplotlib 폰트 캐시 디렉토리를 찾을 수 없거나 유효하지 않습니다: {cache_dir}")
 
+    except AttributeError:
+        st.error("오류: 'matplotlib.font_manager' 모듈에 'get_cachedir' 속성이 없습니다. Matplotlib 버전을 확인해주세요.")
+        st.info("이 문제를 해결하려면 Matplotlib을 최신 버전으로 업데이트해야 합니다. (예: pip install --upgrade matplotlib)")
+    except Exception as e:
+        st.warning(f"폰트 캐시 처리 중 예상치 못한 오류 발생: {e}")
+
+    # 폰트 로드 및 설정은 계속 시도
     if os.path.exists(FONT_PATH):
         font_prop = fm.FontProperties(fname=FONT_PATH)
         plt.rcParams['font.family'] = font_prop.get_name()
         plt.rcParams['font.size'] = 10
         plt.rcParams['axes.unicode_minus'] = False  # 마이너스 기호 깨짐 방지
         st.success(f"한글 폰트 '{font_prop.get_name()}'가 성공적으로 설정되었습니다.")
+        # 캐시를 확실히 재빌드 (get_cachedir이 없어도 작동)
         fm.findSystemFonts(fontpaths=None, rebuild_cache=True) 
         return True
     else:
