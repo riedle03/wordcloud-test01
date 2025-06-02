@@ -14,7 +14,7 @@ import json
 # 한글 폰트 설정
 def setup_korean_font():
     """한글 폰트를 matplotlib에 설정"""
-    font_path = "./font/Pretendard-Bold.ttf"
+    font_path = "./fonts/Pretendard-Bold.ttf"
     if os.path.exists(font_path):
         # 폰트 등록
         font_prop = fm.FontProperties(fname=font_path)
