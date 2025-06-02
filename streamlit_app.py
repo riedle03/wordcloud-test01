@@ -14,25 +14,24 @@ import networkx as nx
 from collections import Counter
 import itertools
 
-# 한글 폰트 설정
-# 폰트 파일 경로를 상수로 정의하여 재사용성을 높입니다.
+# ---------------------------
+# 1. 한글 폰트 설정
+# ---------------------------
 FONT_PATH = "./fonts/Pretendard-Bold.ttf"
 
 def setup_korean_font():
     """한글 폰트를 matplotlib에 설정"""
     if os.path.exists(FONT_PATH):
-        # 폰트 등록
         font_prop = fm.FontProperties(fname=FONT_PATH)
         plt.rcParams['font.family'] = font_prop.get_name()
         plt.rcParams['font.size'] = 10
-        plt.rcParams['axes.unicode_minus'] = False  # 마이너스 기호 깨짐 방지
+        plt.rcParams['axes.unicode_minus'] = False
         return True
     else:
         st.warning(f"한글 폰트 파일을 찾을 수 없어 기본 폰트를 사용합니다: {FONT_PATH}")
         st.info("`/fonts/Pretendard-Bold.ttf` 경로에 폰트 파일이 있는지 확인해주세요.")
         return False
 
-# 앱 시작 시 폰트 설정
 setup_korean_font()
 
 # 페이지 설정
@@ -243,81 +242,68 @@ def create_network_analysis(text, keywords_dict, min_cooccurrence=1):
 
     return G, filtered_co_occurrence # 필터링된 co_occurrence 반환
 
+# ---------------------------
+# 2. 네트워크 그래프 그리기 (FIXED)
+# ---------------------------
+
 def draw_network_graph(G, keywords_dict):
-    """네트워크 그래프 그리기"""
+    """키워드 네트워크 그래프를 그려 PIL.Image 로 반환"""
     if G is None or len(G.nodes()) < 2:
         return None
-    
-    # 한글 폰트 설정
-    font_prop = None
-    if os.path.exists(FONT_PATH): # FONT_PATH 상수를 사용합니다.
-        font_prop = fm.FontProperties(fname=FONT_PATH)
-    
-    # 그래프 레이아웃 설정
-    fig, ax = plt.subplots(figsize=(12, 8)) # Streamlit에서 fig를 관리해야 함
-    
-    # 스프링 레이아웃 사용
-    # k 값 조정으로 노드 간 간격 조절
-    pos = nx.spring_layout(G, k=0.8 / np.sqrt(G.number_of_nodes()), iterations=50) 
-    
-    # 노드 크기 설정 (키워드 가중치 기반)
-    node_sizes = [keywords_dict.get(node, 1) * 300 for node in G.nodes()] # 추출된 키워드 가중치 사용
-    
-    # 엣지 두께 설정 (동시출현 빈도 기반)
+
+    # 한글 폰트 (rcParams 에 이미 등록되어 있으므로 별도 지정 불필요)
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    # 스프링 레이아웃
+    pos = nx.spring_layout(G, k=0.8 / np.sqrt(G.number_of_nodes()), iterations=50)
+
+    # 노드 · 엣지 스타일
+    node_sizes = [keywords_dict.get(node, 1) * 300 for node in G.nodes()]
     edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
-    edge_widths = [w * 1.5 for w in edge_weights] # 엣지 두께 배율 조정
-    
-    # 노드 그리기
-    nx.draw_networkx_nodes(G, pos, 
-                          node_size=node_sizes, 
-                          node_color='lightblue', 
-                          alpha=0.7,
-                          edgecolors='darkblue',
-                          linewidths=1.5,
-                          ax=ax) # ax 명시
-    
-    # 엣지 그리기
-    nx.draw_networkx_edges(G, pos, 
-                          width=edge_widths, 
-                          alpha=0.6, 
-                          edge_color='gray',
-                          ax=ax) # ax 명시
-    
-    # 라벨 그리기
-    labels = {node: node for node in G.nodes()} # 모든 노드에 라벨 적용
-    
-    # 폰트 속성 적용
-    if font_prop:
-        nx.draw_networkx_labels(G, pos, 
-                                labels=labels,
-                               font_size=9, 
-                               font_color='black',
-                               font_weight='bold',
-                               font_family=font_prop.get_name(), # <-- 이 부분을 수정했습니다!
-                               ax=ax) # ax 명시
-    else:
-        nx.draw_networkx_labels(G, pos, 
-                                labels=labels,
-                               font_size=9, 
-                               font_color='black',
-                               font_weight='bold',
-                               ax=ax) # ax 명시
-    
-    ax.set_title('키워드 네트워크 분석', 
-              fontproperties=font_prop if font_prop else None, 
-              fontsize=16, 
-              fontweight='bold')
+    edge_widths = [w * 1.5 for w in edge_weights]
+
+    nx.draw_networkx_nodes(
+        G, pos,
+        node_size=node_sizes,
+        node_color='lightblue',
+        alpha=0.7,
+        edgecolors='darkblue',
+        linewidths=1.5,
+        ax=ax,
+    )
+
+    nx.draw_networkx_edges(
+        G, pos,
+        width=edge_widths,
+        alpha=0.6,
+        edge_color='gray',
+        ax=ax,
+    )
+
+    # ---- FIX: font_family 파라미터 제거 ----
+    # draw_networkx_labels 에 font_family 를 넘기면 Matplotlib 이 해당 폰트를 찾지 못해
+    # 한글이 깨지는 현상이 발생했습니다. 전역 rcParams 로 이미 Pretendard 가 설정되어
+    # 있으므로, 별도의 font_family 지정 없이 호출하면 문제없이 렌더링됩니다.
+    labels = {node: node for node in G.nodes()}
+    nx.draw_networkx_labels(
+        G, pos,
+        labels=labels,
+        font_size=9,
+        font_color='black',
+        font_weight='bold',
+        ax=ax,
+    )
+
+    ax.set_title('키워드 네트워크 분석', fontsize=16, fontweight='bold')
     ax.axis('off')
     plt.tight_layout()
-    
-    # 이미지로 변환
+
     buf = io.BytesIO()
     plt.savefig(buf, format='png', dpi=300, bbox_inches='tight')
     buf.seek(0)
-    image = Image.open(buf)
-    plt.close(fig) # 그래프 리소스 해제
-    
-    return image
+    img = Image.open(buf)
+    plt.close(fig)
+    return img
 
 def analyze_network_metrics(G, keywords_dict):
     """네트워크 지표 분석"""
