@@ -1,5 +1,5 @@
 import streamlit as st
-import matplotlib # matplotlib 모듈 자체를 임포트
+import matplotlib # matplotlib 모듈 자체를 임포트하자
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 from wordcloud import WordCloud
